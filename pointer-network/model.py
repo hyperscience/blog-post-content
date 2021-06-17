@@ -5,7 +5,9 @@ from torch import nn
 
 
 class TokenEmbedder(nn.Module):
-    INIT_NORMALIZE_DENOMINATOR = 1000  # Same order of magnitude that the width in pixels
+    INIT_NORMALIZE_DENOMINATOR = (
+        1000
+    )  # Same order of magnitude that the width in pixels
 
     def __init__(self, n_characters: int, embedding_dim: int, position_dim: int):
         super().__init__()
@@ -62,7 +64,9 @@ class Encoder(nn.Module):
 
     def forward(self, raw_token_embeddings: torch.tensor):
         batch_size, _, _ = raw_token_embeddings.shape
-        token_embeddings, (encoded_document, _) = self.lstm(raw_token_embeddings.transpose(0, 1))
+        token_embeddings, (encoded_document, _) = self.lstm(
+            raw_token_embeddings.transpose(0, 1)
+        )
         token_embeddings = self.dropout(token_embeddings.transpose(0, 1))
         encoded_document = self.dropout(
             encoded_document.reshape(batch_size, 2 * self.embedding_dim)
@@ -76,21 +80,29 @@ class PointerNetwork(nn.Module):
         self.embedding_dim = embedding_dim
         self.max_seq_len = max_seq_len
 
-        self.lstm_cell = nn.LSTMCell(input_size=2 * embedding_dim, hidden_size=embedding_dim)
+        self.lstm_cell = nn.LSTMCell(
+            input_size=2 * embedding_dim, hidden_size=embedding_dim
+        )
         self.dropout = nn.Dropout(0.5)
 
         self.reference = nn.Linear(embedding_dim, 1)
         self.decoder_weights = nn.Linear(embedding_dim, embedding_dim)
         self.encoder_weights = nn.Linear(2 * embedding_dim, embedding_dim)
 
-    def attention(self, token_embeddings: torch.tensor, hx: torch.tensor) -> torch.tensor:
-        batch_size, n_tokens, dim = token_embeddings.shape
+    def attention(
+        self, token_embeddings: torch.tensor, hx: torch.tensor
+    ) -> torch.tensor:
+        batch_size, n_tokens, hidden_dim = token_embeddings.shape
 
         decoder_query = self.decoder_weights(hx)
         token_embeddings = self.encoder_weights(token_embeddings)
 
-        decoder_query = decoder_query.repeat(n_tokens, 1, 1)  # n_token x batch_size x embedding_dim
-        decoder_query = decoder_query.transpose(0, 1)  # batch_size x n_token x embedding_dim
+        decoder_query = decoder_query.repeat(
+            n_tokens, 1, 1
+        )  # n_token x batch_size x embedding_dim
+        decoder_query = decoder_query.transpose(
+            0, 1
+        )  # batch_size x n_token x embedding_dim
         comparison = torch.tanh(decoder_query + token_embeddings)
         probabilities = torch.log_softmax(
             self.reference(comparison).reshape(batch_size, n_tokens), 1
@@ -102,7 +114,7 @@ class PointerNetwork(nn.Module):
     ) -> Tuple[torch.tensor, List[int]]:
         batch_size, _, _ = token_embeddings.shape
         overall_probabilities = []
-        batch_identifier = torch.range(batch_size)
+        batch_identifier = torch.arange(batch_size).type(torch.LongTensor)
 
         peak_indices = []
         decoder_input = encoded_document
@@ -123,7 +135,9 @@ class PointerNetwork(nn.Module):
 
 
 class Model(nn.Module):
-    def __init__(self, n_characters: int, embedding_dim: int, position_dim: int, max_seq_len: int):
+    def __init__(
+        self, n_characters: int, embedding_dim: int, position_dim: int, max_seq_len: int
+    ):
         super().__init__()
 
         self.token_embedder = TokenEmbedder(n_characters, embedding_dim, position_dim)
