@@ -9,44 +9,46 @@ import pandas as pd
 import pytesseract
 import shapely.geometry
 import torch
-from model import Model
 from PIL import Image, ImageDraw
+from sklearn.metrics import auc, precision_recall_curve
 from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+from model import Model
+
 
 def OCR(image_path: str) -> List[Dict[str, Any]]:
     image = Image.open(image_path)
-    image_data = pytesseract.image_to_data(image, output_type="data.frame")
+    image_data = pytesseract.image_to_data(image, output_type='data.frame')
     image_data = image_data.loc[
-        image_data.text.apply(lambda x: pd.notnull(x) and x != "")
+        image_data.text.apply(lambda x: pd.notnull(x) and x != '')
     ]
-    image_data["position"] = image_data.apply(
+    image_data['position'] = image_data.apply(
         lambda row: [
-            int(row["left"]),
-            int(row["top"]),
-            int(row["left"]) + int(row["width"]),
-            int(row["top"]) + int(row["height"]),
+            int(row['left']),
+            int(row['top']),
+            int(row['left']) + int(row['width']),
+            int(row['top']) + int(row['height']),
         ],
         axis=1,
     )
-    return image_data[["text", "position"]].to_dict(orient="record")
+    return image_data[['text', 'position']].to_dict(orient='record')
 
 
 def display_doc(doc: Dict[str, Any], predicted_tokens: Optional[List[int]] = None):
-    image = Image.open(doc["image_path"])
+    image = Image.open(doc['image_path'])
     draw = ImageDraw.Draw(image)
     if predicted_tokens is None:
-        subset_of_tokens = range(0, len(doc["OCR"]))
+        subset_of_tokens = range(0, len(doc['OCR']))
     else:
         # -1 to account for the stop token
         subset_of_tokens = [idx - 1 for idx in predicted_tokens if idx != 0]
 
     for i in subset_of_tokens:
-        token = doc["OCR"][i]
-        draw.rectangle(token["position"], outline="blue")
-    draw.rectangle(doc["ground_truth"], outline="red", width=3)
+        token = doc['OCR'][i]
+        draw.rectangle(token['position'], outline='blue')
+    draw.rectangle(doc['ground_truth'], outline='red', width=3)
     return image
 
 
@@ -57,7 +59,7 @@ def ground_truth_match(
 
     labels = []
     for (i, token) in enumerate(ocr_doc):
-        box = shapely.geometry.box(*token["position"])
+        box = shapely.geometry.box(*token['position'])
         match_score = ground_truth.intersection(box).area / box.area
         if match_score > threshold:
             labels.append(i + 1)  # 0 is reserved for the padding / stop token
@@ -73,15 +75,15 @@ def seed_worker(worker_id):
 
 def get_loaders(datasets, batch_size):
     train_loader = DataLoader(
-        datasets["train"], batch_size=batch_size, worker_init_fn=seed_worker
+        datasets['train'], batch_size=batch_size, worker_init_fn=seed_worker
     )
 
     val_loader = DataLoader(
-        datasets["validation"], batch_size=batch_size, worker_init_fn=seed_worker
+        datasets['validation'], batch_size=batch_size, worker_init_fn=seed_worker
     )
 
     test_loader = DataLoader(
-        datasets["test"], batch_size=batch_size, worker_init_fn=seed_worker
+        datasets['test'], batch_size=batch_size, worker_init_fn=seed_worker
     )
 
     return train_loader, val_loader, test_loader
@@ -89,7 +91,7 @@ def get_loaders(datasets, batch_size):
 
 def text_pre_processing(text: str) -> str:
     text = text.strip().lower()
-    text = "".join([c for c in text if c in string.ascii_lowercase + string.digits])
+    text = ''.join([c for c in text if c in string.ascii_lowercase + string.digits])
     return text
 
 
@@ -162,7 +164,7 @@ def loss_function(
     flat_target = target.reshape(-1)
     flat_probabilities = overall_probabilities.reshape(-1, n_tokens)
     loss = torch.nn.functional.cross_entropy(
-        flat_probabilities, flat_target, reduction="mean"
+        flat_probabilities, flat_target, reduction='mean'
     )
     return loss
 
@@ -188,10 +190,10 @@ def train_model(
     val_loader: DataLoader,
 ) -> Tuple[List[float], List[float], List[float]]:
 
-    if not os.path.exists("models"):
-        os.mkdir("models")
+    if not os.path.exists('models'):
+        os.mkdir('models')
 
-    train_losses, val_losses, val_accuracies = [], [], []
+    train_losses, val_losses, validation_metrics = [], [], []
     for epoch in range(n_epochs):
 
         # Train
@@ -215,15 +217,15 @@ def train_model(
         val_losses.append(val_loss)
 
         val_threshold_data = get_threshold_data(model, optimizer, val_loader)
-        val_accuracy = get_accuracy(val_threshold_data)
-        val_accuracies.append(val_accuracy)
+        val_metrics = get_metrics(val_threshold_data)
+        validation_metrics.append(val_metrics)
 
         print(
-            f"Epoch {epoch}, train_loss={train_loss}, val_loss={val_loss} and val_accuracy={val_accuracy}"
+            f'Epoch {epoch}, train_loss={train_loss}, val_loss={val_loss} \n val_metrics={val_metrics}'
         )
-        torch.save(model, f"models/model_{epoch}.torch")
+        torch.save(model, f'models/model_{epoch}.torch')
 
-    return train_losses, val_losses, val_accuracies
+    return train_losses, val_losses, validation_metrics
 
 
 def get_threshold_data(
@@ -253,17 +255,17 @@ def get_threshold_data(
             zip(prediction_confidence, prediction_correct)
         )
     threshold_data = pd.DataFrame(confidence_and_is_correct)
-    threshold_data.columns = ["confidence", "is_correct"]
+    threshold_data.columns = ['confidence', 'is_correct']
     return threshold_data
 
 
-def get_accuracy(threshold_data: pd.DataFrame, th: float = 0.5) -> Dict[str, float]:
-    above_th = threshold_data.loc[threshold_data.confidence >= th]
-    if len(above_th) > 0:
-        accuracy = len(above_th.loc[above_th.is_correct]) / len(above_th)
-    else:
-        accuracy = 0
-    return accuracy
+def get_metrics(threshold_data: pd.DataFrame) -> Dict[str, float]:
+    accuracy = len(threshold_data.loc[threshold_data.is_correct]) / len(threshold_data)
+    precision, recall, thresholds = precision_recall_curve(
+        1 * threshold_data.is_correct.values, threshold_data.confidence.values
+    )
+    precision_recall_auc = auc(recall, precision)
+    return {'accuracy': accuracy, 'PR-AUC': precision_recall_auc}
 
 
 def find_threshold(
@@ -295,6 +297,6 @@ def set_seed(seed: int) -> None:  # To ensure reproducibility
     torch.backends.cudnn.benchmark = False
     np.random.seed(seed)
     random.seed(seed)
-    os.environ["PYTHONHASHSEED"] = str(seed)
+    os.environ['PYTHONHASHSEED'] = str(seed)
     torch.set_deterministic(True)
     torch.set_num_threads(1)
