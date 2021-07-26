@@ -12,6 +12,7 @@ class BoundingBox:
 
 @dataclass
 class Document:
+    name: str
     token_ids: List[int]
     token_type_ids: List[int]
     attention_mask: List[int]
@@ -30,6 +31,7 @@ def chunk_document(
     while True:
 
         chunk = Document(
+            name=document.name,
             token_ids=document.token_ids[start:stop],
             token_type_ids=document.token_type_ids[start:stop],
             attention_mask=document.attention_mask[start:stop],
