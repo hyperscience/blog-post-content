@@ -38,7 +38,6 @@ def chunk_document(
             positions=document.positions[start:stop],
             token_labels=document.token_labels[start:stop],
         )
-        doc_chunks.append(chunk.add_special_tokens())
 
         if stop >= num_tokens:
             break
